@@ -83,6 +83,7 @@ python3 test_topology_patterns.py  # v2 na 4 wzorcach AML (patrz nizej)
 python3 test_eq_definitions.py     # SELF vs PEER_NB vs GLOBAL - "zly od t=0"
 python3 test_eq_cohort.py          # + COHORT - peer-group po cechach, nie po grafie
 python3 test_kmeans_cohort_risk.py # auto-klastrowanie (k-means) - kiedy zawodzi
+python3 test_recovery.py           # po anomalii: czy defect() wraca w dol, czy zostaje "lepki"?
 ```
 
 Wszystkie deterministyczne (ustalone ziarna) — te same liczby za każdym razem.
@@ -160,6 +161,42 @@ TIMDR-Quantum-Lattice). Prawdziwa podatność v2 nie leży w topologii grafu —
 leży w tym, czy własne, żywe dane węzła faktycznie się zmieniają względem
 jego kalibrowanej normy. Żadna struktura sąsiedztwa tego nie zamaskuje ani
 nie zastąpi.
+
+## Powrót do normy po anomalii (`test_recovery.py`)
+
+Pytanie nietestowane wcześniej: gdy pierścień PO okresie anomalii wraca do
+zachowania statystycznie identycznego z resztą sieci (0.1–0.2, tak samo jak
+w kalibracji), czy `defect()` też wraca w dół, czy zostaje trwale podniesiony
+("lepki" false-positive, bo `eq` jest zamrożone raz na zawsze po kalibracji,
+a jedyna pamięć to filtr EMA)?
+
+Scenariusz: 200 kroków kalibracji (0.1–0.2) → 50 kroków anomalii (pierścień
+skacze na stałe 0.85) → 200 kroków pełnego powrotu do normy (0.1–0.2 dla
+wszystkich, w tym pierścienia). Sprawdzone na 5 niezależnych ziarnach:
+
+| ziarno | D pierścienia: szczyt → po powrocie | spadek do % szczytu | D po powrocie vs mediana sieci | najgorsza ranga pierścienia po powrocie |
+|---|---|---|---|---|
+| 1 | 0.703 → 0.014 | 1.9% | 1.16× | #25/30 |
+| 2 | 0.703 → 0.016 | 2.2% | 1.29× | #24/30 |
+| 3 | 0.703 → 0.010 | 1.5% | 0.95× | #29/30 |
+| 4 | 0.701 → 0.014 | 2.0% | 0.84× | #29/30 |
+| 5 | 0.701 → 0.006 | 0.8% | 0.79× | #30/30 |
+
+**Wniosek: `defect()` nie jest "lepki".** Gdy węzeł faktycznie wraca do
+normalnego zachowania, D spada do pojedynczych procent wartości szczytowej
+i ranking wraca w dolną połowę stawki (blisko lub poniżej mediany sieci) —
+brak trwałego fałszywego alarmu po ustaniu anomalii. To konsekwencja tego,
+że `state()` to szybki filtr EMA (`fast_alpha=0.4`) napędzany bieżącymi
+danymi, a `defect = |state - eq|` porównuje TERAŹNIEJSZY stan (nie
+historię) z zamrożonym `eq` — gdy stan wraca do poziomu `eq`, defekt wraca
+do zera niezależnie od tego, co działo się wcześniej.
+
+Zastrzeżenie: `eq` samo w sobie NIE jest aktualizowane po kalibracji — jeśli
+"nowa normalność" sieci trwale się przesunie (nie chwilowa anomalia, tylko
+permanentna zmiana reżimu), `defect()` będzie to pokazywał jako stały,
+niezanikający sygnał, dopóki ktoś ręcznie nie wywoła ponownej `calibrate_eq()`
+na nowym oknie referencyjnym — to nie jest testowane tutaj i nie ma
+automatycznego mechanizmu re-kalibracji w kodzie.
 
 ## Ostatni ślepy punkt: "zły od samego początku" i cztery definicje `eq`
 
@@ -283,6 +320,9 @@ produkcyjną niż automatyczne wyprowadzanie kohort z cech.
   odtwarza pułapkę PEER_NB, gdy kolegujący się klaster ma też podobne cechy
   statyczne — patrz sekcja wyżej.
 - `test_v1_blind_spot.py` / `test_v2_fix_verified.py` — testy opisane wyżej.
+- `test_recovery.py` — czy `defect()` wraca w dół po pełnym powrocie węzła
+  do normalnego zachowania, czy zostaje trwale podniesiony (false-positive
+  po ustaniu anomalii) — patrz sekcja wyżej.
 
 ## Czego to NIE jest
 
